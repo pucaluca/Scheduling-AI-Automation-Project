@@ -1,0 +1,703 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -432,
+        16
+      ],
+      "id": "431b5071-376f-4493-869d-1268d2a2156e",
+      "name": "When chat message received",
+      "webhookId": "YOUR_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "hasOutputParser": true,
+        "messages": {
+          "messageValues": [
+            {
+              "message": "=/no_think\nYou extract appointment details from a user's message. The output format is handled for you, so just fill the four fields.\n\nFields:\n- action: \"add\" for a new booking, \"update\" for moving or rescheduling, \"delete\" for cancelling, \"other\" for anything else.\n- date_text: the day or date the user wrote, exactly, with abbreviations expanded: \"tmrw\" or \"tmr\" becomes \"tomorrow\", \"mon\" to \"sun\" become full weekday names, \"oct\" stays a month name. Never turn it into a numeric date. Use null if the user gave none.\n- time: 24-hour HH:mm (\"3pm\" = \"15:00\", \"noon\" = \"12:00\", \"9am\" = \"09:00\"). Use null if none.\n- purpose: only the reason for the appointment, in lowercase, such as \"cleaning\" or \"root canal\". Never include words like book, cancel, move, appointment, my or the. Use null if none.\n\nRules:\n- Never guess. A missing value must be null.\n- For \"update\", date_text and time are the NEW values the user wants. purpose is the existing appointment.\n- If the user changes only the time, date_text is null. If they change only the date, time is null.\n\nExamples:\n\"book a cleaning tmrw at 3pm\" -> action add, date_text tomorrow, time 15:00, purpose cleaning\n\"need a root canal next fri\" -> action add, date_text friday, time null, purpose root canal\n\"hey can i get an appointment\" -> action add, date_text null, time null, purpose null\n\"book me at 3 PM\" -> action add, date_text null, time 15:00, purpose null\n\"can u move my cleaning to fri 4pm\" -> action update, date_text friday, time 16:00, purpose cleaning\n\"push my exam to 5pm\" -> action update, date_text null, time 17:00, purpose exam\n\"move my teeth whitening to oct 22\" -> action update, date_text oct 22, time null, purpose teeth whitening\n\"cancel the root canal pls\" -> action delete, date_text null, time null, purpose root canal\n\"cancel my cleaning on oct 2\" -> action delete, date_text oct 2, time null, purpose cleaning\n\"what time do you open\" -> action other, date_text null, time null, purpose null"
+            }
+          ]
+        },
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        -272,
+        16
+      ],
+      "id": "150f017f-34dd-4366-95fc-9ea3fd906a9f",
+      "name": "Basic LLM Chain",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": "qwen3:4b",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmOllama",
+      "typeVersion": 1,
+      "position": [
+        -272,
+        192
+      ],
+      "id": "6f311f7b-6a6d-4ef0-a2d3-e1da61395e8f",
+      "name": "Ollama Model",
+      "credentials": {
+        "ollamaApi": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Ollama account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"action\": { \"type\": \"string\", \"enum\": [\"add\", \"update\", \"delete\", \"other\"] },\n    \"date_text\": { \"type\": [\"string\", \"null\"], \"description\": \"the day/date words exactly as the user wrote them\" },\n    \"time\": { \"type\": [\"string\", \"null\"], \"description\": \"24-hour HH:mm\" },\n    \"purpose\": { \"type\": [\"string\", \"null\"] }\n  },\n  \"required\": [\"action\", \"date_text\", \"time\", \"purpose\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -128,
+        192
+      ],
+      "id": "9e63ae07-0323-4209-9d8c-d5b040e7b901",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "const out = $input.first().json.output;\nconst msg = String($('When chat message received').first().json.chatInput || '').toLowerCase();\nconst today = $now.startOf('day');\n\nconst months = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];\nconst weekdays = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];\n\n// DATE: only trust date words that really appear in the user's message\nconst alias = { tmr: 'tomorrow', tmrw: 'tomorrow', tmw: 'tomorrow' };\nconst skip = ['the','on','of','this','next','st','nd','rd','th'];\nconst grounded = w => w === 'tomorrow' ? /tomorrow|tmr|tmw/.test(msg) : (msg.includes(w) || msg.includes(w.slice(0, 3)));\nconst dateWords = (out.date_text || '').toLowerCase().split(/\\W+/)\n  .filter(w => w && !skip.includes(w))\n  .map(w => alias[w] || w);\nconst text = dateWords.length > 0 && dateWords.every(grounded) ? dateWords.join(' ') : '';\nconst tokens = text.split(' ');\n\nlet date = null;\n\nif (text) {\n  if (text.includes('day after tomorrow')) {\n    date = today.plus({ days: 2 });\n  } else if (tokens.includes('tomorrow')) {\n    date = today.plus({ days: 1 });\n  } else if (tokens.includes('today')) {\n    date = today;\n  } else {\n    const wd = weekdays.findIndex(d => tokens.some(w => w.length >= 3 && d.startsWith(w)));\n    if (wd !== -1) {\n      let diff = (wd + 1) - today.weekday;\n      if (diff <= 0) diff += 7;\n      date = today.plus({ days: diff });\n    } else {\n      const m = months.findIndex(mo => tokens.some(w => w.startsWith(mo)));\n      const dayMatch = text.match(/\\d{1,2}/);\n      if (m !== -1 && dayMatch) {\n        const dnum = Number(dayMatch[0]);\n        let d = today.set({ month: m + 1, day: dnum });\n        if (d.isValid && d.day === dnum) {\n          if (d < today) d = d.plus({ years: 1 });\n          date = d;\n        }\n      }\n    }\n  }\n}\n\n// TIME: read times from the user's message; the model's value must match one of them\nconst found = [];\nfor (const m of msg.matchAll(/(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm)\\b/g)) {\n  let h = Number(m[1]) % 12;\n  if (m[3] === 'pm') h += 12;\n  found.push(String(h).padStart(2, '0') + ':' + (m[2] || '00'));\n}\nfor (const m of msg.matchAll(/\\b([01]?\\d|2[0-3]):([0-5]\\d)\\b(?!\\s*(?:am|pm))/g)) found.push(m[1].padStart(2, '0') + ':' + m[2]);\nif (/\\bnoon\\b/.test(msg)) found.push('12:00');\nif (/\\bmidnight\\b/.test(msg)) found.push('00:00');\nconst time = out.time && found.includes(out.time) ? out.time : null;\n\n// PURPOSE: only the reason itself, and every word must appear in the message\nconst stop = ['book','booking','schedule','reserve','slot','visit','set','up','make','need','want','get','cancel','cancelling','delete','remove','update','change','move','reschedule','push','shift','me','a','an','the','my','i','to','for','at','on','please','pls','appointment','tomorrow','today','tmr','tmrw','tmw','next','this','noon','am','pm','st','nd','rd','th','of','it','instead','yo','hey'];\nconst dayNames = [...months, ...weekdays, 'mon','tue','tues','wed','thu','thur','thurs','fri','sat','sun'];\nconst pWords = (out.purpose || '').toLowerCase().split(/\\W+/)\n  .filter(w => w && !/^\\d+$/.test(w) && !stop.includes(w) && !dayNames.includes(w));\nconst purpose = pWords.length > 0 && pWords.every(w => msg.includes(w)) ? pWords.join(' ') : null;\n\n// ACTION: a booking verb with nothing usable is not a request\nlet action = out.action;\nconst intent = /book|appoint|schedul|reserv|cancel|delet|remov|move|chang|push|shift|slot/.test(msg);\nif (['add','update','delete'].includes(action) && !intent && !text && !time && !purpose) action = 'other';\n\nconst isAdd = action === 'add';\nconst isUpdateOrDelete = action === 'update' || action === 'delete';\n\nreturn [{\n  json: {\n    action,\n    date: date ? date.toFormat('yyyy-MM-dd') : null,\n    time,\n    purpose,\n    readyToAdd: !!(isAdd && date && time && purpose),\n    needsLookup: !!(isUpdateOrDelete && purpose),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        32,
+        -48
+      ],
+      "id": "7f823370-55a3-4e69-b032-09ea2ef768f1",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f2cca56e-236a-42d0-ac32-b42a29a02bae",
+              "name": "output",
+              "value": "={{ $json.action === 'other' ? 'I can book, move or cancel appointments. What would you like to do?' : $json.action !== 'add' ? 'Which appointment do you mean?' : !$json.date ? 'Which day would you like?' : !$json.time ? 'What time would you like?' : 'What is the appointment for?' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        336,
+        176
+      ],
+      "id": "1941cb2a-6bf5-488d-b69f-c7c6dc46ff96",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_EMAIL",
+          "mode": "list",
+          "cachedResultName": "YOUR_CALENDAR_EMAIL"
+        },
+        "start": "={{ DateTime.fromISO($json.date + 'T' + $json.time, { zone: 'Asia/Ho_Chi_Minh' }) }}",
+        "end": "={{ DateTime.fromISO($json.date + 'T' + $json.time, { zone: 'Asia/Ho_Chi_Minh' }).plus({ minutes: 30 }) }}",
+        "additionalFields": {
+          "summary": "={{ $json.purpose }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        336,
+        -144
+      ],
+      "id": "1d9922d8-6b53-444c-99f8-fceab72df24c",
+      "name": "Create an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f2cca56e-236a-42d0-ac32-b42a29a02bae",
+              "name": "output",
+              "value": "=Booked: {{ $('Code in JavaScript').item.json.purpose }} on {{ $('Code in JavaScript').item.json.date }} at {{ $('Code in JavaScript').item.json.time }}.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        480,
+        -144
+      ],
+      "id": "5e4e4fc0-37db-4055-b310-12819ae48568",
+      "name": "Edit Fields1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.readyToAdd }}",
+                    "rightValue": "=true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "65dfbe9a-5423-43cc-b550-b98758d9ee95"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "08e93578-0aeb-44ec-a26c-521f7f90f401",
+                    "leftValue": "={{ $json.needsLookup }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "1f28d361-1100-4a51-b558-0e526717c07d",
+                    "leftValue": "={{ !$json.readyToAdd && !$json.needsLookup }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        192,
+        0
+      ],
+      "id": "657eb469-ada1-4440-8959-e6696734f8cf",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_EMAIL",
+          "mode": "list",
+          "cachedResultName": "YOUR_CALENDAR_EMAIL"
+        },
+        "timeMin": "={{ $json.action === 'update' ? $now.toISO() : ($json.date ? $json.date + 'T00:00:00' : $now.toISO()) }}",
+        "timeMax": "={{ $json.action === 'update' ? $now.plus({ days: 60 }).toISO() : ($json.date ? $json.date + 'T23:59:59' : $now.plus({ days: 60 }).toISO()) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        336,
+        16
+      ],
+      "id": "c7fcdfc5-2ac0-474b-9457-ba29d469721f",
+      "name": "Get many events",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst ctx = $('Code in JavaScript').first().json;\n\nif (items.length === 0) {\n  return [{ json: { ...ctx, matchStatus: 'none' } }];\n}\n\nlet matches = items;\n\nconst stop = ['book','booking','cancel','cancelling','delete','remove','update','change','move','reschedule','me','a','an','the','my','appointment','please'];\nconst cleanedPurpose = (ctx.purpose || '').toLowerCase().split(/\\W+/).filter(w => w && !stop.includes(w)).join(' ');\n\nif (cleanedPurpose) {\n  matches = items.filter(i => (i.json.summary || '').toLowerCase().includes(cleanedPurpose));\n}\n\nif (matches.length > 1 && ctx.time && ctx.action !== 'update') {\n  const byTime = matches.filter(i => (i.json.start?.dateTime || '').includes('T' + ctx.time));\n  if (byTime.length > 0) matches = byTime;\n}\n\nif (matches.length === 1) {\n  const start = matches[0].json.start.dateTime || matches[0].json.start.date;\n  return [{\n    json: {\n      ...ctx,\n      matchStatus: 'found',\n      eventId: matches[0].json.id,\n      eventSummary: matches[0].json.summary,\n      eventStart: start,\n      newDate: ctx.date || start.split('T')[0],\n      newTime: ctx.time || (start.split('T')[1] || '00:00').slice(0, 5),\n      hasChange: !!(ctx.date || ctx.time),\n    },\n  }];\n}\n\nreturn [{\n  json: {\n    ...ctx,\n    matchStatus: matches.length === 0 ? 'none' : 'multiple',\n    candidates: matches.map(i => `${i.json.summary} at ${i.json.start.dateTime || i.json.start.date}`),\n  },\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        480,
+        16
+      ],
+      "id": "bffb0835-6ca8-430b-9dc8-f3c32f9124d3",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.action === 'delete' && $json.matchStatus === 'found' }}",
+                    "rightValue": "=true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "81e158c4-c14d-4cc4-8fc9-c9a06e56b90d"
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "7209256a-df75-465a-9db6-4dbecf5153e4",
+                    "leftValue": "={{ $json.action === 'update' && $json.matchStatus === 'found' && $json.hasChange }}",
+                    "rightValue": "=true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "22b3ba52-48d4-4bfa-bf2c-a69cff404df8",
+                    "leftValue": "={{ !($json.action === 'delete' && $json.matchStatus === 'found') && !($json.action === 'update' && $json.matchStatus === 'found' && $json.hasChange) }}",
+                    "rightValue": "true",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "8ffa4a2c-3eab-4a66-9cad-7bd7c6a5ff20",
+      "name": "Switch1"
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_EMAIL",
+          "mode": "list",
+          "cachedResultName": "YOUR_CALENDAR_EMAIL"
+        },
+        "eventId": "={{ $json.eventId }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        768,
+        -144
+      ],
+      "id": "17a3957b-f5ea-4703-932d-b665c175e6e6",
+      "name": "Delete an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "calendar": {
+          "__rl": true,
+          "value": "YOUR_CALENDAR_EMAIL",
+          "mode": "list",
+          "cachedResultName": "YOUR_CALENDAR_EMAIL"
+        },
+        "eventId": "={{ $json.eventId }}",
+        "updateFields": {
+          "end": "={{ DateTime.fromISO($json.newDate + 'T' + $json.newTime, { zone: 'Asia/Ho_Chi_Minh' }).plus({ minutes: 30 }) }}",
+          "start": "={{ DateTime.fromISO($json.newDate + 'T' + $json.newTime, { zone: 'Asia/Ho_Chi_Minh' }) }}"
+        }
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        768,
+        16
+      ],
+      "id": "b82f6af4-2e95-47e0-ba2f-1fdb63201ed6",
+      "name": "Update an event",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "YOUR_CREDENTIAL_ID",
+          "name": "Google Calendar account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e686ec86-861d-4924-95f7-7b427e25a04a",
+              "name": "output",
+              "value": "=Updated: {{ $('Code in JavaScript1').item.json.eventSummary }} moved to {{ $('Code in JavaScript1').item.json.newDate }} at {{ $('Code in JavaScript1').item.json.newTime }}.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        912,
+        16
+      ],
+      "id": "efc71e79-e481-4492-8dbd-e264041a8dcd",
+      "name": "Edit Fields3"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "be151424-473c-4058-8d0c-62e07ca55139",
+              "name": "output",
+              "value": "={{ $json.matchStatus === 'multiple' ? 'I found more than one matching appointment: ' + $json.candidates.join(', ') + '. Which one do you mean?' : $json.matchStatus === 'none' ? 'I could not find a matching appointment.' : 'What would you like to change it to?' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        768,
+        176
+      ],
+      "id": "542fcc7e-af51-4a66-9e9d-7c44c9290f85",
+      "name": "Edit Fields2"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ca82ae65-b9b6-4ea1-9789-226f7e6fc550",
+              "name": "output",
+              "value": "Sorry, I didn't catch that. I can book, move or cancel appointments.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        32,
+        80
+      ],
+      "id": "634182e8-a629-4a1e-9220-1741750de2c3",
+      "name": "Edit Fields4"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "55e28daf-db0b-4e90-b9f4-2d3140ed26cc",
+              "name": "output",
+              "value": "=Cancelled: {{ $('Code in JavaScript1').item.json.eventSummary }} on {{ $('Code in JavaScript1').item.json.eventStart.split('T')[0] }} at {{ ($('Code in JavaScript1').item.json.eventStart.split('T')[1] || '00:00').slice(0, 5) }}.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        912,
+        -144
+      ],
+      "id": "e99dfdaf-c2de-4263-b1b4-eb3f9eb89ba1",
+      "name": "Edit Fields5"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Basic LLM Chain": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ollama Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Basic LLM Chain",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create an event": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields1": {
+      "main": [
+        []
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Create an event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get many events",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many events": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Switch1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch1": {
+      "main": [
+        [
+          {
+            "node": "Delete an event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update an event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Edit Fields2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete an event": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update an event": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "YOUR_INSTANCE_ID"
+  }
+}

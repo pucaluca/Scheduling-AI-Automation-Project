@@ -13,19 +13,19 @@ date, and decides what happens. Nothing is deleted unless exactly one
 event matches.
 
 ## What went wrong first
-- [real example 1 from your test log]
+- Limitation on performance - hosted locally on MacBook Pro M1 2020 with 8GB RAM
 - [real example 2]
 - [real example 3]
 
 ## Results
-Tested on 20 messages: [X] passed on the first run, [Y] after fixes.
-(Test log: test-log.pdf)
+Tested on 20 messages: 18 passed on the first run,  after fixes.
+(Test log: test-log.pdf) - link pdf
 
 ## Limitations
 No confirmation step yet. Dates are read as the next occurrence.
 
 ## Demo
-[video link]
+[video link] - .nmp4 file
 
 ## Run it yourself
 Import scheduling-bot-v2.1.json into n8n, then select your own

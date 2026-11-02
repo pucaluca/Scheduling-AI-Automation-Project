@@ -4,7 +4,7 @@ Books, moves and cancels appointments from plain chat messages. Built with n8n, 
 
 **Status:** working prototype, tested on a personal test calendar. It has not been used by any real clinic.
 
-![Workflow canvas](Workflow canvas.png)
+![Workflow canvas] (Workflow canvas.png)
 
 **Demo video:** [add link here]
 

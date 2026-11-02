@@ -6,7 +6,7 @@ Books, moves and cancels appointments from plain chat messages. Built with n8n, 
 
 ![n8n Workflow](./n8n-workflow.png)
 
-**Demo video:** [add link here]
+**Demo video:** https://youtu.be/6tEopTdoSe0
 
 ## The idea behind the design
 

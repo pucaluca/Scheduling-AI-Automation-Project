@@ -138,4 +138,4 @@ The first reply can take a minute or more on a laptop. Close heavy apps while te
 
 ## About this project
 
-Built by Nguyen Xuan Khoi. I used an AI assistant for guidance and code suggestions. I built and connected the workflow, ran and logged the tests, and found and diagnosed the failures described above, including the wrong-year dates and the invented booking.
+Built by Nguyen Xuan Khoi - Luca Nguyen. I used an AI assistant for guidance and code suggestions. I built and connected the workflow, ran and logged the tests, and found and diagnosed the failures described above, including the wrong-year dates and the invented booking.

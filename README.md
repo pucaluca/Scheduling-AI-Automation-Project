@@ -55,6 +55,8 @@ The workflow has 18 nodes: Chat Trigger, Basic LLM Chain, Structured Output Pars
 
 **Offline code review (19 mocked cases):** found two more problems. The time check could accept a wrong hour when the same number appears in the date, and the fallback reply was wrong for cancel requests with no purpose. Both are fixed in v2.1. These tests used mocked model output, so they check the code layer only.
 
+Full log: https://docs.google.com/spreadsheets/d/1n5opvJVYrDWEY_SDZ_oisnnAWAitS1b-UQ_AYPLItmc/edit?usp=sharing
+
 **Round 2 (v2.1, 20 messages):** - Pass rate: 90% , Average run time: 74.27185s - Now currently operates as a Scheduling Bot
 
 **ANOMALIES**

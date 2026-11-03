@@ -44,7 +44,7 @@ The workflow has 18 nodes: Chat Trigger, Basic LLM Chain, Structured Output Pars
 
 ## Test results
 
-**Round 1 (v2, before fixes, 20 messages):** 15 passed, 4 failed, 1 not scored.
+**Round 1 (v2, before fixes, 20 messages):** 15 passed, 4 failed, 1 not scored. - Originally operates as a clinic booking bot
 
 | Failure | Cause | Confidence |
 |---|---|---|
@@ -55,9 +55,13 @@ The workflow has 18 nodes: Chat Trigger, Basic LLM Chain, Structured Output Pars
 
 **Offline code review (19 mocked cases):** found two more problems. The time check could accept a wrong hour when the same number appears in the date, and the fallback reply was wrong for cancel requests with no purpose. Both are fixed in v2.1. These tests used mocked model output, so they check the code layer only.
 
-**Round 2 (v2.1, 20 messages):** [fill in after re-running on a test calendar]
+**Round 2 (v2.1, 20 messages):** - Pass rate: 90% , Average run time: 74.27185s - Now currently operates as a Scheduling Bot
 
-Full log: [test-log.pdf](test-log.pdf)
+**ANOMALIES**
+
+do you guys take insurance? - Output is not as expected - 114.405s runtime - Bot didnt get prompted to answer as expected
+
+Full log: https://docs.google.com/spreadsheets/d/1atlVX_qTGUPRPHF_U_bmJS5c4Dus8sYZ8oz7yfi3h2s/edit?usp=sharing
 
 ## Limitations
 
@@ -120,3 +124,9 @@ The first reply can take a minute or more on a laptop. Close heavy apps while te
 ## About this project
 
 Built by Nguyen Xuan Khoi. I used an AI assistant for guidance and code suggestions. I built and connected the workflow, ran and logged the tests, and found and diagnosed the failures described above, including the wrong-year dates and the invented booking.
+
+## Contacts
+
+
+Phone number - 0917850279
+Email - xuaankhoi0917@gmail.com
